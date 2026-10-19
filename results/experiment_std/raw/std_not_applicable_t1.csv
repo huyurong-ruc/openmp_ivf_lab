@@ -1,0 +1,11 @@
+strategy,threads,queries,batch,k,nprobe,grain,repeat,time_ms,qps,recall,correctness,p50_ms,p95_ms,batch_times_ms,query_order,omp_schedule,distance
+std,1,128,64,10,8,1024,1,56.042707,2283.97247121,0.7265625,PASS,,,"27.672414;28.370293",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,2,61.499373,2081.32203234,0.7265625,PASS,,,"29.89811;31.601263",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,3,57.534015,2224.77085946,0.7265625,PASS,,,"29.440972;28.093043",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,4,57.75336,2216.32126685,0.7265625,PASS,,,"27.253546;30.499814",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,5,54.83269,2334.37389265,0.7265625,PASS,,,"26.388764;28.443926",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,6,55.088014,2323.5544487,0.7265625,PASS,,,"26.709212;28.378802",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,7,65.797523,1945.36198574,0.7265625,PASS,,,"34.492753;31.30477",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,8,59.448236,2153.13369433,0.7265625,PASS,,,"29.510163;29.938073",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,9,59.01928,2168.78281131,0.7265625,PASS,,,"31.312431;27.706849",original,"not_applicable","scalar"
+std,1,128,64,10,8,1024,10,67.586277,1893.87558661,0.7265625,PASS,,,"32.544559;35.041718",original,"not_applicable","scalar"

@@ -2,13 +2,56 @@
 #include <algorithm>
 #include <vector>
 #include <stdexcept>
+#include <thread>
 
 namespace ivf {
 
-// C++标准线程对照，后续单独比较
-void search_std_thread(const IVFIndex&, const float*, std::size_t,
-                       const SearchOptions&, Neighbor*) {
-    throw std::logic_error("search_std_thread is a student TODO");
+// C++标准线程对照，按连续区间划分查询
+void search_std_thread(const IVFIndex& index, const float* queries, std::size_t count,
+                       const SearchOptions& options, Neighbor* output) {
+    if (count == 0) return;
+
+    // 根据配置选择距离计算函数
+    auto distance = options.use_simd ? l2_distance_simd : l2_distance_scalar;
+
+    // 实际创建的线程数不超过查询数
+    const std::size_t thread_count = std::min<std::size_t>(count, std::size_t(std::max(options.threads, 1)));
+
+    std::vector<std::thread> workers;
+    workers.reserve(thread_count);
+
+    // 每个线程处理一个连续查询区间
+    const std::size_t base = count / thread_count;
+    const std::size_t extra = count % thread_count;
+
+    for (std::size_t t = 0; t < thread_count; ++t) {
+        const std::size_t begin = t * base + std::min<std::size_t>(t, extra);
+        const std::size_t len = base + (t < extra ? 1 : 0);
+        const std::size_t end = begin + len;
+
+        workers.emplace_back([&, begin, end]() {
+            for (std::size_t q = begin; q < end; ++q) {
+                const float* query = queries + q * index.dim;
+                const auto lists = select_lists(index, query, options.nprobe);
+                TopK best(options.k);
+
+                // 扫描选中的倒排列表，维护当前查询的Top-k
+                for (auto list : lists) {
+                    for (std::size_t p = index.list_ptr[list];
+                         p < index.list_ptr[list + 1]; ++p) {
+                        best.add({distance(query, index.vector(p), index.dim), index.ids[p]});
+                    }
+                }
+
+                best.finish(output + q * options.k);
+            }
+        });
+    }
+
+    // 等待所有线程结束
+    for (auto& worker : workers) {
+        worker.join();
+    }
 }
 
 // 查询级并行，支持static/dynamic/guided

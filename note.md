@@ -217,3 +217,21 @@ g++ -O3 -std=c++17 -Wall -Wextra -Wpedantic -fopenmp -pthread \
 #### 结论
 
 其中ivf_search.cpp:49:40显示loop vectorized using 16 byte vectors，对应l2_distance_simd()中使用OpenMP SIMD reduction的平方欧氏距离计算循环，证明该循环已成功向量化，向量宽度为128位。
+
+## std::thread对照实验
+
+### 复现命令
+
+make && bash run_experiment_std.sh
+python3 analyze_std.py
+python3 plot_std.py
+
+### 主要结论
+
+1. **两种查询级并行实现均获得明显加速。** OMP1 static和std::thread分别在16线程、8线程下取得最高加速比8.31×和6.77×，说明按查询划分工作能够有效利用多核资源。
+
+2. **两种实现的性能差异随线程数变化。** 在1～4线程时，OMP1 static与std::thread的性能接近；8线程时std::thread的中位运行时间较低（8.500ms对9.700ms），但16线程时OMP1明显更快（6.926ms对9.039ms）。
+
+3. **std::thread的扩展性在高线程数下受到限制。** std::thread从8增加到16线程时，中位运行时间不降反升，而OMP1仍有改善。由于std::thread每次调用都需要创建和回收线程，其额外管理成本可能影响性能，但也可能受到系统调度、负载分配及运行波动等因素影响，不能仅凭整体计时确定具体原因。
+
+4. **本次对照体现了并行实现方式的性能差异。** OMP1 static与std::thread均采用查询级连续区间划分，但线程管理机制不同。在当前batch=64的工作负载下，OMP1在16线程时获得更好的性能和扩展性，而std::thread在8线程时表现较好。
