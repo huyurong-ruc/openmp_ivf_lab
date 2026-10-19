@@ -18,6 +18,8 @@ void search_omp_student_1(const IVFIndex& index, const float* queries, std::size
     for (std::size_t q = 0; q < count; q++) {
         // 取第q个查询向量
         const float* query = queries + q * index.dim;
+        // 根据配置选择距离计算函数
+        const auto distance = options.use_simd ? l2_distance_simd : l2_distance_scalar;
         // 找最近的8个聚类列表
         const auto lists = select_lists(index, query, options.nprobe);
         TopK best(options.k);
@@ -25,7 +27,7 @@ void search_omp_student_1(const IVFIndex& index, const float* queries, std::size
         // 扫描8个列表中的所有候选，计算欧式距离加入TopK容器
         for (auto list : lists) {
             for (std::size_t p = index.list_ptr[list]; p < index.list_ptr[list + 1]; p++) {
-                best.add({l2_distance_scalar(query, index.vector(p), index.dim), index.ids[p]});
+                best.add({distance(query, index.vector(p), index.dim), index.ids[p]});
             }
         }
         // 输出最终Top10结果
@@ -43,6 +45,8 @@ void search_omp_student_2(const IVFIndex& index, const float* queries, std::size
         {
             for (std::size_t q = 0; q < count; q++) {
                 const float* query = queries + q * index.dim;
+                // 根据配置选择距离计算函数
+                const auto distance = options.use_simd ? l2_distance_simd : l2_distance_scalar;
                 const auto lists = select_lists(index, query, options.nprobe);
 
                 // 按grain划分任务，每个task负责一段候选向量
@@ -65,12 +69,12 @@ void search_omp_student_2(const IVFIndex& index, const float* queries, std::size
                 #pragma omp taskgroup
                 {
                     for (std::size_t i = 0; i < chunks.size(); i++) {
-                        #pragma omp task firstprivate(i, query) shared(chunks, local_results, index, options)
+                        #pragma omp task firstprivate(i, query, distance) shared(chunks, local_results, index, options)
                         {
                             TopK local_best(options.k);
                             for (std::size_t p = chunks[i].begin; p < chunks[i].end; p++) {
                                 local_best.add({
-                                    l2_distance_scalar(query, index.vector(p), index.dim),
+                                    distance(query, index.vector(p), index.dim),
                                     index.ids[p]
                                 });
                             }

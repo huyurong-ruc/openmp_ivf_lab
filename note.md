@@ -184,3 +184,36 @@ python3 plot_D.py
 3. 不同并行策略在不同搜索范围下的吞吐表现存在差异。 OMP1 dynamic,1在nprobe=1和8时表现最好，OMP1 guided,1在nprobe=32时略占优势；OMP2的QPS始终明显低于OMP1。这与实验A中OMP1更适合大batch吞吐优化的结果一致。
 
 4. nprobe需要根据检索质量与吞吐量要求选择。 nprobe=1具有较高吞吐但Recall偏低；nprobe=32能够实现约94.22%的Recall，但吞吐量明显下降；nprobe=8则在本实验测试的三个搜索范围中提供了中间的质量与吞吐表现，并不意味着它对所有应用都是最优选择。
+
+## 实验E
+
+### 复现命令：
+
+make && bash run_experiment_E.sh
+python3 analyze_E.py
+python3 plot_E.py
+
+### 主要结论
+
+1. **SIMD向量化已成功实现并通过正确性验证。** GCC向量化报告显示SIMD距离计算循环使用16字节向量，反汇编包含`subpd/mulpd/addpd`打包双精度运算，而Scalar路径采用标量双精度指令。全部16组配置均通过正确性检查，Recall@10保持为0.7265625。
+
+2. **SIMD对不同并行策略的加速效果存在差异。** 在16线程下，OMP1 static和dynamic,1分别获得约1.145×和1.104×的加速；guided,1与OMP2的加速比分别为0.905×和0.830×，反而出现性能下降。1线程下，OMP1 guided,1取得约1.139×加速，其余策略的改善较小或基本持平。
+
+3. **距离计算的向量化不保证端到端检索加速。** IVF-Flat检索还包含聚类选择、候选访存、Top-k维护及线程调度等操作。SIMD只优化距离计算部分，其收益可能受到其他开销限制。尤其OMP2在16线程下出现明显性能回退，但目前尚不能仅凭整体计时确定具体原因。
+
+4. **SIMD优化收益具有配置依赖性。** 本实验中SIMD对部分OMP1配置有效，但并非所有策略和线程数组合均能受益。因此需要结合实际运行时间与编译器向量化证据评价SIMD效果，不能将向量指令的存在直接等同于整个检索程序的性能提升。
+
+### 向量化报告
+
+在results/experiment_E/evidence/
+
+#### 复现命令：
+
+g++ -O3 -std=c++17 -Wall -Wextra -Wpedantic -fopenmp -pthread \
+    -fopt-info-vec-optimized=results/experiment_E/evidence/vectorization.txt \
+    -c ivf_search.cpp \
+    -o results/experiment_E/evidence/ivf_search.o
+
+#### 结论
+
+其中ivf_search.cpp:49:40显示loop vectorized using 16 byte vectors，对应l2_distance_simd()中使用OpenMP SIMD reduction的平方欧氏距离计算循环，证明该循环已成功向量化，向量宽度为128位。

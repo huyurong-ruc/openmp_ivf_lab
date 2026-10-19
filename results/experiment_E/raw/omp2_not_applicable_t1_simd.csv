@@ -1,0 +1,11 @@
+strategy,threads,queries,batch,k,nprobe,grain,repeat,time_ms,qps,recall,correctness,p50_ms,p95_ms,batch_times_ms,query_order,omp_schedule,distance
+omp2,1,128,64,10,8,1024,1,49.865579,2566.90090774,0.7265625,PASS,,,"27.323275;22.542304",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,2,48.623631,2632.46486055,0.7265625,PASS,,,"25.227073;23.396558",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,3,54.359834,2354.67974387,0.7265625,PASS,,,"21.305119;33.054715",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,4,55.210086,2318.41696461,0.7265625,PASS,,,"26.015927;29.194159",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,5,65.161555,1964.34845669,0.7265625,PASS,,,"35.44991;29.711645",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,6,54.77301,2336.91739782,0.7265625,PASS,,,"25.673592;29.099418",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,7,55.090766,2323.43837804,0.7265625,PASS,,,"26.894155;28.196611",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,8,47.882168,2673.22899832,0.7265625,PASS,,,"25.352807;22.529361",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,9,50.640406,2527.62586461,0.7265625,PASS,,,"22.143505;28.496901",original,"not_applicable","simd"
+omp2,1,128,64,10,8,1024,10,52.319582,2446.50272626,0.7265625,PASS,,,"25.978658;26.340924",original,"not_applicable","simd"

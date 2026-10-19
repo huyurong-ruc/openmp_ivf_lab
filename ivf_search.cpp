@@ -30,8 +30,21 @@ void TopK::finish(Neighbor* output) {
     std::fill(output + heap_.size(), output + k_, Neighbor{});
 }
 
+// 保持Scalar路径使用标量循环
+__attribute__((optimize("no-tree-vectorize")))
 double l2_distance_scalar(const float* a, const float* b, std::size_t dim) {
     double sum = 0;
+    for (std::size_t j = 0; j < dim; ++j) {
+        const double delta = double(a[j]) - double(b[j]);
+        sum += delta * delta;
+    }
+    return sum;
+}
+
+double l2_distance_simd(const float* a, const float* b, std::size_t dim) {
+    double sum = 0;
+    // 使用SIMD归约计算平方欧氏距离
+    #pragma omp simd reduction(+:sum)
     for (std::size_t j = 0; j < dim; ++j) {
         const double delta = double(a[j]) - double(b[j]);
         sum += delta * delta;

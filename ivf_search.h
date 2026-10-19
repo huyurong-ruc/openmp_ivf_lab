@@ -30,9 +30,11 @@ struct SearchOptions {
     std::size_t nprobe = 8;
     int threads = 4;
     std::size_t grain = 1024;
+    bool use_simd = false;
 };
 
 double l2_distance_scalar(const float* a, const float* b, std::size_t dim);
+double l2_distance_simd(const float* a, const float* b, std::size_t dim);
 std::vector<std::uint32_t> select_lists(const IVFIndex& index, const float* query,
                                       std::size_t nprobe);
 

@@ -49,6 +49,11 @@ Arguments parse(int argc, char** argv) {
         else if (key == "--mode") args.mode = value;
         else if (key == "--csv") args.csv = value;
         else if (key == "--query-order") args.query_order = value;
+        else if (key == "--distance") {
+            if (value == "scalar") args.search.use_simd = false;
+            else if (value == "simd") args.search.use_simd = true;
+            else throw std::invalid_argument("--distance expects scalar or simd");
+        }
         else if (key == "--queries") args.queries = number(value);
         else if (key == "--batch") args.batch = number(value);
         else if (key == "--repeats") args.repeats = number(value);
@@ -93,6 +98,7 @@ int run(int argc, char** argv) {
             "  --base PATH (.fbin)   --centroids PATH (.fvecs)\n"
             "  --cluster-ids PATH (.ivecs)   --queries-file PATH (.fbin)\n"
             "  --query-order original|sorted\n"
+            "  --distance scalar|simd\n"
             "  --gt PATH (.ibin)   --csv PATH\n";
         return 0;
     }
