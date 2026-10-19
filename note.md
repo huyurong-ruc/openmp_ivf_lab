@@ -57,7 +57,7 @@ openmp_ivf_lab\results\experiment_A\raw\
 
 ### summary复现命令：
 
-python3 analyze.py
+python3 analyze_A.py
 
 ### 图复现命令：
 
@@ -98,3 +98,55 @@ OMP1从8线程增加到16线程后，加速比开始趋于饱和；OMP2在batch=
 此外，OMP1 static在2线程时出现约1.05 ms的p95，明显高于其他配置，反映出单查询延迟存在一定波动。该异常点尚不能仅凭现有数据确定原因。
 
 总体而言，OMP2更适合需要降低单查询响应延迟的场景，但其最佳线程数较少；OMP1则更适合大batch下的吞吐量优化。
+
+
+## 实验B
+
+### 原始结果复现命令：
+
+运行：
+
+1. 打开 WSL：在 Windows PowerShell 中输入
+
+```
+wsl
+```
+
+2. 进入项目目录
+
+```
+cd /mnt/c/Users/huyur/Desktop/openmp_ivf_lab
+```
+
+3. 编译并运行实验B
+```
+make && bash run_experiment_B.sh
+```
+
+
+4. 查看结果
+运行结束后，CSV会保存在：
+openmp_ivf_lab\results\experiment_B\raw\
+
+### summary复现命令：
+
+python3 analyze_B.py
+
+### 图复现命令：
+
+python3 plot_B.py
+
+### 实验B主要结论
+
+1. **倒排列表和查询工作量分布不均匀。** 4096个倒排列表的长度中位数为227，范围为66～1257；128个查询的候选数C(q)中位数为2122，范围为1256～5395。即使nprobe固定为8，不同查询的实际距离计算量仍存在显著差异。
+
+2. **按C(q)排序不一定能提升查询级并行性能。** 排序后OMP1的static、dynamic,1和guided,1分别变慢14.76%、14.89%和9.38%。说明简单地将查询按工作量排序不能保证获得更好的并行性能。
+
+3. **不同并行策略对查询顺序的敏感性不同。** OMP2在排序后耗时下降8.59%，与OMP1呈现相反趋势。查询顺序可能同时影响线程负载分配、数据局部性和任务调度，因此不能单凭候选数量分布判断性能变化的原因。
+
+为了避免再次修改student、lab文件实现Wt的统计，函数越加越多导致代码混乱，所以决定新增一个workload_B.cpp文件单独实现B的线程工作量统计。
+
+复现workload.csv：
+g++ -I. -O3 -std=c++17 -Wall -Wextra -Wpedantic -fopenmp -pthread workload_B.cpp ivf_io.cpp ivf_search.cpp -o workload_B && ./workload_B
+
+4. **线程负载均衡分析：** 通过独立统计各线程实际完成的候选距离计算次数 \(W_t\)，计算负载不均衡比 \(\max(W_t)/\operatorname{mean}(W_t)\)。排序后，OMP1的static、dynamic,1和guided,1调度的不均衡比分别由1.342、1.239、1.273上升至1.563、1.466、1.428，与三种调度均出现运行时间增长的现象一致。相反，OMP2的不均衡比由1.432下降至1.319，同时中位运行时间下降约8.59%。表明查询顺序会影响实际线程工作量分配，负载均衡变化可能是性能差异的重要原因。但由于工作量统计与正式计时分开运行，且性能还受到缓存局部性、任务调度及同步开销等因素影响，不能仅凭这些数据确定因果关系。
