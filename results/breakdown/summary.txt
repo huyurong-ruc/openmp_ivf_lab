@@ -1,0 +1,12 @@
+strategy=omp2 threads=16 queries=128 batch=64 k=10 nprobe=8 grain=1024 distance=scalar query_order=original warmup=1 repeats=10
+compiler=g++ flags=-I. -O3 -std=c++17 -Wall -Wextra -Wpedantic -fopenmp -pthread
+OMP_WAIT_POLICY=PASSIVE OMP_DYNAMIC=FALSE OMP_PROC_BIND=false OMP_PLACES=unset OMP_SCHEDULE=unset
+timing=steady_clock wall time; two synchronous batch calls per repeat; phase times are not sums of worker CPU times
+percent=100 * sum(phase_ms) / sum(total_ms) over 10 repeats; medians are computed independently by column
+phase min_ms median_ms max_ms percent
+total 52.638673 70.760858 86.572415 100.000000
+prepare 28.085025 41.042841 52.884742 58.306649
+task 23.320746 28.306343 32.624646 39.908360
+merge 0.220083 0.262956 0.357784 0.395405
+other 0.795361 1.002320 1.092444 1.389586
+correctness=PASS recall@10=0.726562500
