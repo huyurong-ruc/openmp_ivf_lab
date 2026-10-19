@@ -1,7 +1,7 @@
 #include "ivf_search.h"
 
 #include <omp.h>
-
+#include <cmath>
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -119,16 +119,27 @@ int run(int argc, char** argv) {
         ? ivf::search_exact_serial : ivf::search_ivf_serial;
     reference_search(index, queries.data.data(), args.queries, args.search, reference.data());
     const double recall = ivf::recall_at_k(reference, truth, args.queries, args.search.k);
+    
+    std::vector<double> latencies;
+    std::vector<double> batch_times;
+    
     auto run_once = [&] {
         std::fill(output.begin(), output.end(),
                   ivf::Neighbor{std::numeric_limits<double>::quiet_NaN(), -2});
         double ms = 0;
+        batch_times.clear();
         for (std::size_t begin = 0; begin < args.queries; begin += args.batch) {
             const auto count = std::min(args.batch, args.queries - begin);
             const auto start = std::chrono::steady_clock::now();
             search(index, queries.row(begin), count, args.search, output.data() + begin * args.search.k);
-            ms += std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - start).count();
+            const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+            ms += elapsed;
+            batch_times.push_back(elapsed);
+
+            // 仅在batch=1时记录单查询延迟
+            if (args.batch == 1) {
+                latencies.push_back(elapsed);
+            }
         }
         ivf::check_result(output, reference);
         return ms;
@@ -144,18 +155,45 @@ int run(int argc, char** argv) {
     if (!args.csv.empty()) {
         csv.exceptions(std::ios::failbit | std::ios::badbit);
         csv.open(args.csv);
-        csv << "strategy,threads,queries,batch,k,nprobe,grain,repeat,time_ms,qps,recall,correctness\n"
+        csv << "strategy,threads,queries,batch,k,nprobe,grain,repeat,time_ms,qps,recall,correctness,p50_ms,p95_ms,batch_times_ms\n"
             << std::setprecision(12);
     }
     for (std::size_t r = 0; r < args.warmup; ++r) run_once();
+    latencies.clear(); // 不统计预热阶段的延迟
     std::vector<double> times(args.repeats);
     for (std::size_t r = 0; r < args.repeats; ++r) {
         times[r] = run_once();
+        double p50 = 0, p95 = 0;
+        if (args.batch == 1) {
+            std::sort(latencies.begin(), latencies.end());
+
+            auto percentile = [&](double p) {
+                const std::size_t i = static_cast<std::size_t>(
+                    std::ceil(p * latencies.size())) - 1;
+                return latencies[i];
+            };
+
+            p50 = percentile(0.50);
+            p95 = percentile(0.95);
+            latencies.clear();
+        }
         if (csv.is_open()) {
             csv << args.only << ',' << args.search.threads << ',' << args.queries << ','
                 << args.batch << ',' << args.search.k << ',' << args.search.nprobe << ','
                 << args.search.grain << ',' << r + 1 << ',' << times[r] << ','
-                << args.queries * 1000.0 / times[r] << ',' << recall << ",PASS\n";
+                << args.queries * 1000.0 / times[r] << ',' << recall << ",PASS,";
+            if (args.batch == 1) {
+                csv << p50 << ',' << p95;
+            } else {
+                csv << ',';
+            }
+
+            csv << ",\"";
+            for (std::size_t i = 0; i < batch_times.size(); ++i) {
+                if (i != 0) csv << ';';
+                csv << batch_times[i];
+            }
+            csv << "\"\n";
         }
     }
     if (csv.is_open()) csv.close();
