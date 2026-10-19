@@ -1,0 +1,18 @@
+perf version 7.0.14
+Linux 6.6.87.2-microsoft-standard-WSL2
+uid=0(root) gid=0(root) groups=0(root)
+perf_event_paranoid=2
+allowed_cpus=0-15
+Cpus_allowed_list:	0-15
+OMP_DYNAMIC=FALSE
+OMP_PROC_BIND=false
+OMP_WAIT_POLICY=PASSIVE
+thread_binding=none; all processes inherit the same CPU set
+distance=scalar query_order=original queries=128 batch=64 k=10 nprobe=8 grain=1024 warmup=1 repeats=10
+formal_windows=20 query_instances=1280; default perf inheritance enabled
+task-clock is cumulative CPU time; perf time elapsed is not search time
+control-boundary overhead may be counted; ack waits are outside benchmark time_ms
+serial strategy=serial threads=1 OMP_SCHEDULE=not_applicable
+omp1_static strategy=omp1 threads=16 OMP_SCHEDULE=static
+std strategy=std threads=16 OMP_SCHEDULE=not_applicable
+omp2_task strategy=omp2 threads=16 OMP_SCHEDULE=not_applicable

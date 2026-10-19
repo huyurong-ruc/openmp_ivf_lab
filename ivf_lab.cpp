@@ -12,6 +12,11 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
+#include <poll.h>
+#include <unistd.h>
 
 struct Arguments {
     std::string base = "/var/dataset/sift_base.fbin";
@@ -21,6 +26,7 @@ struct Arguments {
     std::string groundtruth = "/var/dataset/gt.ibin";
     std::string only = "serial", mode = "bench", csv;
     std::string query_order = "original";
+    int perf_control_fd = -1, perf_ack_fd = -1;
     std::size_t queries = 128, batch = 32, repeats = 10, warmup = 1;
     ivf::SearchOptions search;
 };
@@ -49,6 +55,11 @@ Arguments parse(int argc, char** argv) {
         else if (key == "--mode") args.mode = value;
         else if (key == "--csv") args.csv = value;
         else if (key == "--query-order") args.query_order = value;
+        else if (key == "--perf-control-fd" || key == "--perf-ack-fd") {
+            const auto fd = number(value);
+            if (fd > INT_MAX) throw std::invalid_argument("invalid perf FD");
+            (key == "--perf-control-fd" ? args.perf_control_fd : args.perf_ack_fd) = static_cast<int>(fd);
+        }
         else if (key == "--distance") {
             if (value == "scalar") args.search.use_simd = false;
             else if (value == "simd") args.search.use_simd = true;
@@ -77,7 +88,58 @@ Arguments parse(int argc, char** argv) {
     if (args.query_order != "original" && args.query_order != "sorted") {
         throw std::invalid_argument("--query-order expects original or sorted");
     }
+    if ((args.perf_control_fd >= 0) != (args.perf_ack_fd >= 0) ||
+        (args.perf_control_fd >= 0 &&
+         (args.perf_control_fd == args.perf_ack_fd || args.mode != "bench"))) {
+        throw std::invalid_argument("perf requires two distinct FDs and --mode bench");
+    }
     return args;
+}
+
+// 发送完整控制命令，并在有限时间内等待perf确认
+void perf_control(int control_fd, int ack_fd, const std::string& command) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    auto wait_ready = [&](int fd, short events) {
+        for (;;) {
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                deadline - std::chrono::steady_clock::now()).count();
+            if (remaining <= 0) throw std::runtime_error("perf control timeout: " + command);
+            pollfd item{fd, events, 0};
+            const int result = poll(&item, 1, static_cast<int>(remaining));
+            if (result < 0 && errno == EINTR) continue;
+            if (result < 0) throw std::runtime_error("perf control poll failed");
+            if (result == 0) continue;
+            if (item.revents & events) return;
+            throw std::runtime_error("perf control channel disconnected");
+        }
+    };
+    const std::string message = command + '\n';
+    std::size_t sent = 0;
+    while (sent < message.size()) {
+        wait_ready(control_fd, POLLOUT);
+        const auto n = write(control_fd, message.data() + sent, message.size() - sent);
+        if (n < 0 && (errno == EINTR || errno == EAGAIN)) continue;
+        if (n <= 0) throw std::runtime_error("perf control write failed");
+        sent += static_cast<std::size_t>(n);
+    }
+    std::string reply;
+    for (;;) {
+        wait_ready(ack_fd, POLLIN);
+        char c;
+        const auto n = read(ack_fd, &c, 1);
+        if (n < 0 && (errno == EINTR || errno == EAGAIN)) continue;
+        if (n <= 0) throw std::runtime_error("perf ack channel closed");
+        // perf可能在ack换行后附带NUL终止符
+        if (c == '\n' || c == '\0' || c == '\r') {
+            if (reply.empty()) continue;
+            if (reply == "ack") return;
+            throw std::runtime_error("unexpected perf ack");
+        }
+        reply += c;
+        if (reply.size() > 3 || std::string("ack").compare(0, reply.size(), reply) != 0) {
+            throw std::runtime_error("unexpected perf ack");
+        }
+    }
 }
 
 ivf::SearchFunction select_strategy(const std::string& name) {
@@ -99,10 +161,23 @@ int run(int argc, char** argv) {
             "  --cluster-ids PATH (.ivecs)   --queries-file PATH (.fbin)\n"
             "  --query-order original|sorted\n"
             "  --distance scalar|simd\n"
+            "  --perf-control-fd FD   --perf-ack-fd FD\n"
             "  --gt PATH (.ibin)   --csv PATH\n";
         return 0;
     }
     auto args = parse(argc, argv);
+    if (args.perf_control_fd >= 0) {
+        // 非阻塞FD配合poll超时，避免通信中断后永久等待
+        for (int fd : {args.perf_control_fd, args.perf_ack_fd}) {
+            const int flags = fcntl(fd, F_GETFL);
+            if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+                throw std::invalid_argument("invalid perf control FD");
+            }
+        }
+        if (std::signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+            throw std::runtime_error("cannot handle perf pipe disconnect");
+        }
+    }
     const auto search = select_strategy(args.only);
     const auto index = ivf::read_ivf(args.base, args.centroids, args.cluster_ids);
     auto queries = ivf::read_fbin(args.queries_file);
@@ -173,6 +248,7 @@ int run(int argc, char** argv) {
     
     std::vector<double> latencies;
     std::vector<double> batch_times;
+    bool collect_perf = false;
     
     auto run_once = [&] {
         std::fill(output.begin(), output.end(),
@@ -181,9 +257,11 @@ int run(int argc, char** argv) {
         batch_times.clear();
         for (std::size_t begin = 0; begin < args.queries; begin += args.batch) {
             const auto count = std::min(args.batch, args.queries - begin);
+            if (collect_perf) perf_control(args.perf_control_fd, args.perf_ack_fd, "enable");
             const auto start = std::chrono::steady_clock::now();
             search(index, queries.row(begin), count, args.search, output.data() + begin * args.search.k);
             const double elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+            if (collect_perf) perf_control(args.perf_control_fd, args.perf_ack_fd, "disable");
             ms += elapsed;
             batch_times.push_back(elapsed);
 
@@ -210,6 +288,8 @@ int run(int argc, char** argv) {
             << std::setprecision(12);
     }
     for (std::size_t r = 0; r < args.warmup; ++r) run_once();
+    // 仅对正式batch检索开启计数，确认等待位于原计时区间之外
+    collect_perf = args.perf_control_fd >= 0;
     latencies.clear(); // 不统计预热阶段的延迟
     std::vector<double> times(args.repeats);
     for (std::size_t r = 0; r < args.repeats; ++r) {
